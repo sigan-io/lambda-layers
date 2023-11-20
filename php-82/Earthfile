@@ -55,6 +55,7 @@ dependencies:
     RUN LD_LIBRARY_PATH= dnf install -y libtool
     RUN LD_LIBRARY_PATH= dnf install -y ImageMagick
     RUN LD_LIBRARY_PATH= dnf install -y ghostscript
+    # RUN LD_LIBRARY_PATH= dnf install -y libcurl
 
 zlib:
     ###############################################################################
@@ -103,7 +104,7 @@ zlib:
 openssl:
     FROM +zlib
 
-    ARG VERSION_OPENSSL=3.0.12
+    ARG VERSION_OPENSSL=3.1.4
     ARG OPENSSL_BUILD_DIR=${BUILD_DIR}/openssl
     ARG CA_BUNDLE_SOURCE="https://curl.se/ca/cacert.pem"
     ARG CA_BUNDLE="${INSTALL_DIR}/bref/ssl/cert.pem"
@@ -191,11 +192,11 @@ libssh2:
     ARG VERSION_LIBSSH2=1.11.0
     ARG LIBSSH2_BUILD_DIR=${BUILD_DIR}/libssh2
 
-    WORKDIR  ${LIBSSH2_BUILD_DIR}/bin
+    WORKDIR  ${LIBSSH2_BUILD_DIR}
 
     RUN set -xe \
         && curl -Ls https://github.com/libssh2/libssh2/releases/download/libssh2-${VERSION_LIBSSH2}/libssh2-${VERSION_LIBSSH2}.tar.gz \
-        | tar xzC ${LIBSSH2_BUILD_DIR} --strip-components=1
+        | tar xzC . --strip-components=1
 
 
     RUN CFLAGS="" \
@@ -305,7 +306,7 @@ libzip:
     # Needed by:
     #   - php
 
-    FROM +curl
+    FROM +libnghttp2
 
     ARG VERSION_ZIP=1.10.1
     ARG ZIP_BUILD_DIR=${BUILD_DIR}/zip
