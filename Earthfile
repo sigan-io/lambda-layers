@@ -32,18 +32,34 @@ setup:
 
     WORKDIR ${BUILD_DIR}
 
-    COPY --dir ../utils/lib-copy .
+    # Get the PHP extension dir.
+    ARG PHP_EXT_DIR= $(php -r 'echo ini_get("extension_dir");')
 
-    RUN false
+    # Get necessary files to filter dependencies.
+    COPY utils/lib-copy/copy-dependencies.php .
+    COPY +al2023-packages/al2023-packages.txt .
 
+    FOR library IN $(ls ${PHP_EXT_DIR})
+        RUN php copy-dependencies.php ${PHP_EXT_DIR} "${library}" ${BUILD_DIR}/lib
+    END
 
-    # Export PHP
-    RUN chmod +x ${INSTALL_DIR}/bin/php
     SAVE ARTIFACT ${INSTALL_DIR}/bin/php /bin/php
+    SAVE ARTIFACT ${PHP_EXT_DIR}/* /bref/extensions
+    SAVE ARTIFACT ${BUILD_DIR}/lib/* /lib
 
-    # Export PHP extensions
-    SAVE ARTIFACT $(php -r 'echo ini_get("extension_dir");')/* /bref/extensions
+# --------------------------------------------------------------- #
+# Generates a list of all the packages installed by default.
+# --------------------------------------------------------------- #
+al2023-packages:
+    WORKDIR ${BUILD_DIR}
 
+    RUN ls -p /lib64/ | grep -v / | sort > al2023-packages.txt
+
+    SAVE ARTIFACT al2023-packages.txt
+
+# --------------------------------------------------------------- #
+# Installs all the needed dependencies to build PHP.
+# --------------------------------------------------------------- #
 packages:
     RUN set -xe \
         && dnf makecache
