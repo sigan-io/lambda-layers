@@ -30,6 +30,13 @@ setup:
 
     FROM +php-extensions
 
+    WORKDIR ${BUILD_DIR}
+
+    COPY --dir ../utils/lib-copy .
+
+    RUN false
+
+
     # Export PHP
     RUN chmod +x ${INSTALL_DIR}/bin/php
     SAVE ARTIFACT ${INSTALL_DIR}/bin/php /bin/php
@@ -53,10 +60,13 @@ packages:
     RUN LD_LIBRARY_PATH= dnf install -y libtool
     RUN LD_LIBRARY_PATH= dnf install -y ImageMagick
     RUN LD_LIBRARY_PATH= dnf install -y ghostscript
+    RUN LD_LIBRARY_PATH= dnf install -y php-pear
 
     RUN LD_LIBRARY_PATH= dnf install -y libcurl-devel
     RUN LD_LIBRARY_PATH= dnf install -y libicu-devel
     RUN LD_LIBRARY_PATH= dnf install -y libxslt-devel
+    RUN LD_LIBRARY_PATH= dnf install -y php-devel
+    RUN LD_LIBRARY_PATH= dnf install -y ImageMagick-devel
 
 zlib:
     ###############################################################################
@@ -496,18 +506,13 @@ php:
         # \/ This may need to be undone 
         --without-readline
     RUN make -j $(nproc)
-
-    # Run `make install` and override PEAR's PHAR URL because pear.php.net is down
-    RUN set -xe \
-        && make install PEAR_INSTALLER_URL='https://github.com/pear/pearweb_phars/raw/master/install-pear-nozlib.phar' \
-        && { find ${INSTALL_DIR}/bin ${INSTALL_DIR}/sbin -type f -perm +0111 -exec strip --strip-all '{}' + || true; } \
-        && make clean
-        # && cp php.ini-production ${INSTALL_DIR}/etc/php/php.ini
+    # cp php.ini-production ${INSTALL_DIR}/etc/php/php.ini
 
 php-extensions:
     FROM +php
 
+    RUN pecl channel-update pecl.php.net
+
     RUN pecl install APCu
     RUN pecl install imagick
     RUN pecl install igbinary
-
