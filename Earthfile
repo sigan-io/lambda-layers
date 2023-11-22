@@ -12,53 +12,39 @@ ARG --global LD_LIBRARY_PATH="${INSTALL_DIR}/lib64:${INSTALL_DIR}/lib"
 ARG --global CMAKE_BUILD_PARALLEL_LEVEL=4
 ARG --global MAKEFLAGS='-j4'
 
-create-image:
-    COPY +setup/* /opt
+# --------------------------------------------------------------- #
+# Builds an image for AWS's PHP-FPM custom runtime.
+# --------------------------------------------------------------- #
+php-fpm:
+    # Copy files to /opt, which is where the lambda layer lives.
+    COPY +php-install/php-fpm       /opt/bin/
+    COPY +php-extensions/*          /opt/bref/extensions/
+    COPY +php-dependencies/*        /opt/lib/
+    COPY layers/bootstrap.php       /opt/bref/bootstrap.php
+    COPY layers/fpm/bref.ini        /opt/bref/etc/php/conf.d/
+    COPY layers/fpm/php-fpm.conf    /opt/bref/etc/php-fpm.conf
+    COPY layers/fpm/bootstrap.sh    /opt/bootstrap
 
-setup:
-    # RUN mkdir -p ${BUILD_DIR}  \
-    #     ${INSTALL_DIR}/bin \
-    #     ${INSTALL_DIR}/doc \
-    #     ${INSTALL_DIR}/etc/php \
-    #     ${INSTALL_DIR}/etc/php/conf.d \
-    #     ${INSTALL_DIR}/include \
-    #     ${INSTALL_DIR}/lib \
-    #     ${INSTALL_DIR}/lib64 \
-    #     ${INSTALL_DIR}/libexec \
-    #     ${INSTALL_DIR}/sbin \
-    #     ${INSTALL_DIR}/share
+    # Copy files to /var/runtime to support deploying as a Docker image
+    COPY layers/fpm/bootstrap.sh    /var/runtime/bootstrap
 
-    FROM +php-extensions
+    RUN chmod +x /opt/bootstrap
+    RUN chmod +x /var/runtime/bootstrap
 
+    SAVE IMAGE sigan.io/php-82-fpm:latest
+
+# --------------------------------------------------------------- #
+# Generates a list of all the libraries installed by default.
+# --------------------------------------------------------------- #
+al2023-libraries:
     WORKDIR ${BUILD_DIR}
 
-    # Get the PHP extension dir.
-    ARG PHP_EXT_DIR= $(php -r 'echo ini_get("extension_dir");')
+    RUN ls -p /lib64/ | grep -v / | sort > al2023-libraries.txt
 
-    # Get necessary files to filter dependencies.
-    COPY utils/lib-copy/copy-dependencies.php .
-    COPY +al2023-packages/al2023-packages.txt .
-
-    FOR library IN $(ls ${PHP_EXT_DIR})
-        RUN php copy-dependencies.php ${PHP_EXT_DIR} "${library}" ${BUILD_DIR}/lib
-    END
-
-    SAVE ARTIFACT ${INSTALL_DIR}/bin/php /bin/php
-    SAVE ARTIFACT ${PHP_EXT_DIR}/* /bref/extensions
-    SAVE ARTIFACT ${BUILD_DIR}/lib/* /lib
+    SAVE ARTIFACT al2023-libraries.txt
 
 # --------------------------------------------------------------- #
-# Generates a list of all the packages installed by default.
-# --------------------------------------------------------------- #
-al2023-packages:
-    WORKDIR ${BUILD_DIR}
-
-    RUN ls -p /lib64/ | grep -v / | sort > al2023-packages.txt
-
-    SAVE ARTIFACT al2023-packages.txt
-
-# --------------------------------------------------------------- #
-# Installs all the needed dependencies to build PHP.
+# Installs all the needed dependencies to build and install PHP.
 # --------------------------------------------------------------- #
 packages:
     RUN set -xe \
@@ -76,23 +62,19 @@ packages:
     RUN LD_LIBRARY_PATH= dnf install -y libtool
     RUN LD_LIBRARY_PATH= dnf install -y ImageMagick
     RUN LD_LIBRARY_PATH= dnf install -y ghostscript
-    RUN LD_LIBRARY_PATH= dnf install -y php-pear
 
     RUN LD_LIBRARY_PATH= dnf install -y libcurl-devel
     RUN LD_LIBRARY_PATH= dnf install -y libicu-devel
     RUN LD_LIBRARY_PATH= dnf install -y libxslt-devel
-    RUN LD_LIBRARY_PATH= dnf install -y php-devel
     RUN LD_LIBRARY_PATH= dnf install -y ImageMagick-devel
 
+# --------------------------------------------------------------- #
+# Builds and installs zlib.
+# We compile a newer version because Lambda uses an old version
+# (1.2.7) that has a security vulnerability (CVE-2022-37434).
+# (Check if this issue persists in al2023)
+# --------------------------------------------------------------- #
 zlib:
-    ###############################################################################
-    # ZLIB Build
-    # We compile a newer version because Lambda uses an old version (1.2.7) that
-    # has a security vulnerability (CVE-2022-37434).
-    # See https://github.com/brefphp/aws-lambda-layers/pull/110
-    # Can be removed once Lambda updates their version.
-    # https://github.com/madler/zlib/releases
-
     FROM +packages
 
     ARG VERSION_ZLIB=1.3
@@ -118,12 +100,9 @@ zlib:
 
 # --------------------------------------------------------------- #
 # Builds and installs openssl
-#
 # Releases: https://github.com/openssl/openssl/releases
-#
 # Needs:
 #   - zlib
-#
 # Needed by:
 #   - curl
 #   - php
@@ -164,12 +143,9 @@ openssl:
 
 # --------------------------------------------------------------- #
 # Builds and installs libxml2
-#
 # Releases: https://github.com/GNOME/libxml2/releases
-#
 # Needs:
 #   - zlib
-#
 # Needed by:
 #   - php
 #   - libnghttp2
@@ -204,16 +180,16 @@ libxml2:
     RUN make install
     RUN cp xml2-config ${INSTALL_DIR}/bin/xml2-config
 
+# --------------------------------------------------------------- #
+# Builds and installs libssh2.
+# Releases: https://github.com/libssh2/libssh2/releases
+# Needs:
+#   - zlib
+#   - OpenSSL
+# Needed by:
+#   - curl
+# --------------------------------------------------------------- #
 libssh2:
-    ##############################################################################
-    # LIBSSH2
-    # https://github.com/libssh2/libssh2/releases
-    # Needs:
-    #   - zlib
-    #   - OpenSSL
-    # Needed by:
-    #   - curl
-
     FROM +libxml2
 
     ARG VERSION_LIBSSH2=1.11.0
@@ -241,19 +217,18 @@ libssh2:
 
     RUN cmake  --build . --target install
 
-libnghttp2:
-    ###############################################################################
-    # LIBNGHTTP2
-    # This adds support for HTTP 2 requests in curl.
-    # See https://github.com/brefphp/bref/issues/727 and https://github.com/brefphp/bref/pull/740
-    # https://github.com/nghttp2/nghttp2/releases
-    # Needs:
-    #   - zlib
-    #   - OpenSSL
-    #   - libxml2
-    # Needed by:
-    #   - curl
 
+# --------------------------------------------------------------- #
+# Builds and installs libnghttp2.
+# Releases: https://github.com/nghttp2/nghttp2/releases
+# Needs:
+#   - zlib
+#   - OpenSSL
+#   - libxml2
+# Needed by:
+#   - curl
+# --------------------------------------------------------------- #
+libnghttp2:
     FROM +libssh2
 
     ARG VERSION_NGHTTP2=1.58.0
@@ -274,18 +249,18 @@ libnghttp2:
 
     RUN make install
 
+# --------------------------------------------------------------- #
+# Builds and installs curl.
+# Releases: https://github.com/curl/curl/releases
+# Needs:
+#   - zlib
+#   - OpenSSL
+#   - libssh2
+#   - libnghttp2
+# Needed by:
+#   - php
+# --------------------------------------------------------------- #
 curl:
-    ###############################################################################
-    # CURL
-    # # https://github.com/curl/curl/releases
-    # # Needs:
-    # #   - zlib
-    # #   - OpenSSL
-    # #   - libssh2
-    # #   - libnghttp2
-    # # Needed by:
-    # #   - php
-
     FROM +libnghttp2
 
     ARG VERSION_CURL=8.4.0
@@ -326,13 +301,13 @@ curl:
 
     RUN make install
 
+# --------------------------------------------------------------- #
+# Builds and installs libzip.
+# Releases: https://github.com/nih-at/libzip/releases
+# Needed by:
+#   - php
+# --------------------------------------------------------------- #
 libzip:
-    ###############################################################################
-    # LIBZIP
-    # https://github.com/nih-at/libzip/releases
-    # Needed by:
-    #   - php
-
     FROM +libnghttp2
 
     ARG VERSION_ZIP=1.10.1
@@ -354,13 +329,13 @@ libzip:
 
     RUN cmake  --build . --target install
 
+# --------------------------------------------------------------- #
+# Builds and installs libsodium.
+# Releases: https://github.com/jedisct1/libsodium/releases
+# Needed by:
+#   - php
+# --------------------------------------------------------------- #
 libsodium:
-    ###############################################################################
-    # LIBSODIUM
-    # https://github.com/jedisct1/libsodium/releases
-    # Needed by:
-    #   - php
-
     FROM +libzip
 
     ARG VERSION_LIBSODIUM=1.0.19
@@ -414,17 +389,14 @@ postgres:
     RUN cd ${POSTGRES_BUILD_DIR}/src/backend && make generated-headers
     RUN cd ${POSTGRES_BUILD_DIR}/src/include && make install
 
+# --------------------------------------------------------------- #
+# Builds and installs libsodium.
+# (Maybe this build is not needed. We need to try to install it with dnf)
+# Releases: https://github.com/kkos/oniguruma/releases
+# Needed by:
+#   - mbstring
+# --------------------------------------------------------------- #
 oniguruma:
-    ###############################################################################
-    # Oniguruma
-    # This library is not packaged in PHP since PHP 7.4.
-    # See https://github.com/php/php-src/blob/43dc7da8e3719d3e89bd8ec15ebb13f997bbbaa9/UPGRADING#L578-L581
-    # We do not install the system version because I didn't manage to make it work...
-    # Ideally we shouldn't compile it ourselves.
-    # https://github.com/kkos/oniguruma/releases
-    # Needed by:
-    #   - php mbstring
-
     FROM +libsodium
 
     ARG VERSION_ONIG=6.9.9
@@ -439,30 +411,20 @@ oniguruma:
 
     RUN ./configure \
         --prefix=${INSTALL_DIR}
-    RUN make && make install
+    RUN make
+    RUN make install
 
-php:
-    # PHP Build
-    # https://github.com/php/php-src/releases
-    # Needs:
-    #   - zlib
-    #   - libxml2
-    #   - openssl
-    #   - readline
-    #   - sodium
-
+# --------------------------------------------------------------- #
+# Installs PHP and exports PHP-FPM.
+# --------------------------------------------------------------- #
+php-install:
     FROM +oniguruma
 
-    # Note: this variable is used when building extra/custom extensions, do not remove
     ARG VERSION_PHP=8.2.12
     ENV PHP_BUILD_DIR=${BUILD_DIR}/php
 
     WORKDIR ${PHP_BUILD_DIR}
 
-    # Download and unpack the source code
-    # --location will follow redirects
-    # --silent will hide the progress, but also the errors: we restore error messages with --show-error
-    # --fail makes sure that curl returns an error instead of fetching the 404 page
     RUN curl --location --silent --show-error --fail https://www.php.net/get/php-${VERSION_PHP}.tar.gz/from/this/mirror \
         | tar xzC . --strip-components=1
 
@@ -482,53 +444,140 @@ php:
         --enable-option-checking=fatal \
         --with-config-file-path=/opt/bref/etc/php \
         --with-config-file-scan-dir=/opt/bref/etc/php/conf.d:/var/task/php/conf.d \
-        # WP Highly Recommended
-        --enable-dom \
+        # Required by WP
         --enable-exif \
-        --enable-intl \
         --enable-mbstring \
         --enable-xml \
         --enable-fileinfo \
-        --with-openssl \
-        --with-mysqli=mysqlnd \
-        --with-curl \
-        --with-zip \
-        # WP Recommended
         --enable-bcmath \
         --enable-filter \
         --enable-shmop \
-        --with-iconv \
-        --with-sodium \
-        # WP Recommended for cache
         --enable-opcache \
-        # Popular settings
-        --enable-fpm \
-        --with-pear \
-        --with-xsl \
+        --enable-intl=shared \
+        --with-zip=shared \
+        --with-curl=shared \
+        --with-openssl=shared \
+        --with-mysqli=shared \
+        --with-iconv=shared \
+        --with-sodium=shared \
+        --with-xsl=shared \
         # Not required by WP or AWS Lambda
-        --disable-phpdbg \
-        --disable-pcntl \
         --disable-pdo \
         --disable-cgi \
-        --disable-sockets \
-        --disable-ftp \
-        --disable-soap \
         --without-sqlite3 \
-        --without-zlib \
-        # \/ This may need to be undone
-        --disable-cli \
-        # \/ This may need to be undone 
-        --without-gettext \
-        # \/ This may need to be undone 
-        --without-readline
+        # Binaries
+        --enable-fpm \
+        --enable-cli
     RUN make -j $(nproc)
-    # cp php.ini-production ${INSTALL_DIR}/etc/php/php.ini
+    RUN make install
+    RUN make clean
 
+    # This php.ini is to be used in the build, but it's not going to the image.
+    RUN mkdir -p ${INSTALL_DIR}/etc/php/ \
+        && cp php.ini-production ${INSTALL_DIR}/etc/php/php.ini
+
+    SAVE ARTIFACT ${INSTALL_DIR}/sbin/php-fpm php-fpm
+
+# --------------------------------------------------------------- #
+# Builds the APCu extension for PHP and exports it.
+# --------------------------------------------------------------- #
+php-apcu:
+    FROM +php-install
+
+    WORKDIR ${BUILD_DIR}/apcu/
+
+    RUN set -xe \
+        && curl -Ls https://pecl.php.net/get/APCu \
+        | tar -xzC . --strip-components=1
+    
+    RUN phpize
+    RUN ./configure --enable-apcu
+    RUN make
+
+    SAVE ARTIFACT modules/apcu.so
+
+# --------------------------------------------------------------- #
+# Builds the Imagick extension for PHP and exports it.
+# --------------------------------------------------------------- #
+php-imagick:
+    FROM +php-install
+
+    WORKDIR ${BUILD_DIR}/imagick/
+
+    RUN set -xe \
+        && curl -Ls https://pecl.php.net/get/imagick \
+        | tar -xzC . --strip-components=1
+
+    RUN phpize
+    RUN ./configure
+    RUN make
+
+    SAVE ARTIFACT modules/imagick.so
+
+# --------------------------------------------------------------- #
+# Builds the igbinary extension for PHP and exports it.
+# --------------------------------------------------------------- #
+php-igbinary:
+    FROM +php-install
+
+    WORKDIR ${BUILD_DIR}/igbinary/
+
+    RUN set -xe \
+        && curl -Ls https://pecl.php.net/get/igbinary \
+        | tar -xzC . --strip-components=1
+
+    RUN phpize
+    RUN ./configure \
+        CFLAGS="-O2 -g" \
+        --enable-igbinary
+    RUN make
+
+    SAVE ARTIFACT modules/igbinary.so
+
+# --------------------------------------------------------------- #
+# Groups all PHP extensions in one place and exports them.
+# --------------------------------------------------------------- #
 php-extensions:
-    FROM +php
+    FROM +php-install
 
-    RUN pecl channel-update pecl.php.net
+    WORKDIR ${BUILD_DIR}/extensions/
 
-    RUN pecl install APCu
-    RUN pecl install imagick
-    RUN pecl install igbinary
+    ARG PHP_EXT_DIR=$(php -r 'echo ini_get("extension_dir");')
+    
+    # Get all extensions in one place.
+    RUN cp ${PHP_EXT_DIR}/* .
+    COPY +php-apcu/*        .
+    COPY +php-imagick/*     .
+    COPY +php-igbinary/*    .
+
+    # Export PHP extensions.
+    SAVE ARTIFACT *
+
+# --------------------------------------------------------------- #
+# Puts together the needed dependencies for PHP and exports them.
+# --------------------------------------------------------------- #
+php-dependencies:
+    FROM +php-install
+
+    WORKDIR ${BUILD_DIR}/dependencies/
+
+    RUN mkdir extensions
+    RUN mkdir libraries
+
+    # Get all extensions.
+    COPY +php-extensions/* extensions/
+
+    # Get necessary files to filter dependencies.
+    COPY utils/copy-dependencies.php .
+    COPY +al2023-libraries/* .
+
+    # Get dependencies of PHP-FPM.
+    RUN php copy-dependencies.php ${INSTALL_DIR}/sbin/php-fpm ./libraries/ al2023-libraries.txt
+
+    # Get dependencies of PHP extensions
+    FOR extension IN $(ls extensions)
+        RUN php copy-dependencies.php "./extensions/${extension}" ./libraries/ al2023-libraries.txt
+    END
+
+    # Export PHP dependencies.
+    SAVE ARTIFACT libraries/*

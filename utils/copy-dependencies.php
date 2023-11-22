@@ -22,24 +22,22 @@ if (! ($argv[2] ?? false)) {
     exit(1);
 }
 
-[$_, $root_directory, $library, $target_directory] = $argv;
-
-$library = $root_directory . '/' . $library;
+[$_, $extension, $target_directory, $libraries_index] = $argv;
 
 // Create the target directory if it doesn't exist
 if (! is_dir($target_directory)) {
     mkdir($target_directory, 0777, true);
 }
 
-$default_libraries = file(__DIR__ . "/al2023-packages.txt");
+$default_libraries = file(__DIR__ . "/" . $libraries_index);
 $default_libraries = array_map('trim', $default_libraries);
 
 // For some reason some libraries are actually not in Lambda, despite being in the docker image 🤷
-// $default_libraries = array_filter($default_libraries, function ($library) {
-//     return ! str_contains($library, 'libgcrypt.so') && ! str_contains($library, 'libgpg-error.so');
+// $default_libraries = array_filter($default_libraries, function ($extension) {
+//     return ! str_contains($extension, 'libgcrypt.so') && ! str_contains($extension, 'libgpg-error.so');
 // });
 
-$required_libraries = list_dependencies($library);
+$required_libraries = list_dependencies($extension);
 
 // Exclude existing system libraries
 $required_libraries = array_filter($required_libraries, function (string $lib) use ($default_libraries) {
@@ -71,18 +69,18 @@ foreach ($required_libraries as $library_path) {
 }
 
 
-function list_dependencies(string $library): array {
+function list_dependencies(string $extension): array {
     // ldd lists the dependencies of a binary or library/extension (.so file)
-    exec("ldd $library 2>&1", $lines);
+    exec("ldd $extension 2>&1", $lines);
 
     if (str_contains(end($lines), 'exited with unknown exit code (139)')) {
         // We can't use `ldd` on binaries (like /opt/bin/php) because it fails on cross-platform builds
         // so we fall back to `LD_TRACE_LOADED_OBJECTS` (which doesn't work for .so files, that's why we also try `ldd`)
         // See https://stackoverflow.com/a/35905007/245552
-        $output = shell_exec("LD_TRACE_LOADED_OBJECTS=1 $library 2>&1");
+        $output = shell_exec("LD_TRACE_LOADED_OBJECTS=1 $extension 2>&1");
 
         if (!$output) {
-            throw new RuntimeException("Could not list dependencies for $library");
+            throw new RuntimeException("Could not list dependencies for $extension");
         }
 
         $lines = explode(PHP_EOL, $output);
@@ -92,7 +90,7 @@ function list_dependencies(string $library): array {
 
     foreach ($lines as $line) {
         if (str_ends_with($line, ' => not found')) {
-            throw new RuntimeException("This library is a dependency for $library but cannot be found by 'ldd':\n$line\n");
+            throw new RuntimeException("This library is a dependency for $extension but cannot be found by 'ldd':\n$line\n");
         }
 
         $matches = [];
