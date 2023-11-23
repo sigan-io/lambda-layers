@@ -21,13 +21,13 @@ php-fpm:
     COPY +php-install/php-fpm       /opt/bin/php-fpm
     COPY +php-extensions/*          /opt/bref/extensions/
     COPY +php-dependencies/*        /opt/lib/
-    COPY ini-files/php-fpm.ini      /opt/bref/etc/php/conf.d/bref.ini
-    COPY layers/fpm/php-fpm.conf    /opt/bref/etc/php-fpm.conf
-    COPY layers/bootstrap.php       /opt/bref/bootstrap.php
-    COPY layers/fpm/bootstrap.sh    /opt/bootstrap
+    COPY fpm/php-fpm.ini            /opt/bref/etc/php/conf.d/php-fpm.ini
+    COPY fpm/php-fpm.conf           /opt/bref/etc/php-fpm.conf
+    COPY fpm/bootstrap.php          /opt/bref/bootstrap.php
+    COPY fpm/bootstrap.sh           /opt/bootstrap
 
     # Copy files to /var/runtime to support deploying as a Docker image
-    COPY layers/fpm/bootstrap.sh    /var/runtime/bootstrap
+    COPY fpm/bootstrap.sh    /var/runtime/bootstrap
 
     RUN chmod +x /opt/bootstrap
     RUN chmod +x /var/runtime/bootstrap
@@ -45,13 +45,13 @@ php-fpm-dev:
     COPY +php-xdebug/*              /opt/bref/extensions/
     COPY +php-extensions/*          /opt/bref/extensions/
     COPY +php-dependencies/*        /opt/lib/
-    COPY ini-files/php-fpm-dev.ini  /opt/bref/etc/php/conf.d/bref.ini
-    COPY layers/fpm/php-fpm.conf    /opt/bref/etc/php-fpm.conf
-    COPY layers/bootstrap.php       /opt/bref/bootstrap.php
-    COPY layers/fpm/bootstrap.sh    /opt/bootstrap
+    COPY fpm/php-fpm-dev.ini        /opt/bref/etc/php/conf.d/php-fpm-dev.ini
+    COPY fpm/php-fpm.conf           /opt/bref/etc/php-fpm.conf
+    COPY fpm/bootstrap.php          /opt/bref/bootstrap.php
+    COPY fpm/bootstrap.sh           /opt/bootstrap
 
     # Copy files to /var/runtime to support deploying as a Docker image
-    COPY layers/fpm/bootstrap.sh    /var/runtime/bootstrap
+    COPY fpm/bootstrap.sh    /var/runtime/bootstrap
 
     RUN chmod +x /opt/bootstrap
     RUN chmod +x /var/runtime/bootstrap
@@ -63,6 +63,7 @@ php-fpm-dev:
 # --------------------------------------------------------------- #
 # Builds all images for AWS's PHP-FPM custom runtime.
 # --------------------------------------------------------------- #
+# TODO: fix this
 php-fpm-all:
     BUILD +php-fpm
     BUILD +php-fpm-dev
@@ -607,6 +608,10 @@ php-dependencies:
     RUN mkdir extensions
     RUN mkdir libraries
 
+    WAIT
+        BUILD +php-extensions
+    END
+
     # Get all extensions.
     COPY +php-extensions/* ./extensions/
 
@@ -615,14 +620,14 @@ php-dependencies:
     COPY +al2023-libraries/* .
 
     # Get dependencies of PHP.
-    RUN ./copy-dependencies ${INSTALL_DIR}/bin/php        ./libraries/ al2023-libraries.txt
+    RUN ./copy-dependencies ${INSTALL_DIR}/bin/php        ./libraries al2023-libraries.txt
 
     # Get dependencies of PHP-FPM.
-    RUN ./copy-dependencies ${INSTALL_DIR}/sbin/php-fpm   ./libraries/ al2023-libraries.txt
+    RUN ./copy-dependencies ${INSTALL_DIR}/sbin/php-fpm   ./libraries al2023-libraries.txt
 
     # Get dependencies of PHP extensions.
     FOR extension IN $(ls extensions)
-        RUN ./copy-dependencies "./extensions/${extension}" ./libraries/ al2023-libraries.txt
+        RUN ./copy-dependencies "./extensions/${extension}" ./libraries al2023-libraries.txt
     END
 
     # Export PHP dependencies.

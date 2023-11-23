@@ -6,10 +6,10 @@
  * Copies the system dependencies used by a binary/extension.
  *
  * Usage:
- *    php copy-dependencies.php <file-to-analyze> <target-directory>
+ *    copy-dependencies <file-to-analyze> <target-directory>
  *
  * For example:
- *    php copy-dependencies.php /opt/bin/php /opt/lib
+ *    copy-dependencies /opt/bin/php /opt/lib
  *
  ********************************************************/
 
