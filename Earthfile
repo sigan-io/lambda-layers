@@ -17,6 +17,7 @@ ARG --global MAKEFLAGS='-j4'
 # --------------------------------------------------------------- #
 php-fpm:
     # Copy files to /opt, which is where the lambda layer lives.
+    COPY +php-install/php           /opt/bin/
     COPY +php-install/php-fpm       /opt/bin/
     COPY +php-extensions/*          /opt/bref/extensions/
     COPY +php-dependencies/*        /opt/lib/
@@ -78,9 +79,8 @@ zlib:
     FROM +packages
 
     ARG VERSION_ZLIB=1.3
-    ARG ZLIB_BUILD_DIR=${BUILD_DIR}/zlib
 
-    WORKDIR ${ZLIB_BUILD_DIR}
+    WORKDIR ${BUILD_DIR}/zlib/
 
     RUN set -xe \
         && curl -Ls https://github.com/madler/zlib/releases/download/v${VERSION_ZLIB}/zlib-${VERSION_ZLIB}.tar.gz \
@@ -111,11 +111,10 @@ openssl:
     FROM +zlib
 
     ARG VERSION_OPENSSL=3.1.4
-    ARG OPENSSL_BUILD_DIR=${BUILD_DIR}/openssl
     ARG CA_BUNDLE_SOURCE="https://curl.se/ca/cacert.pem"
     ARG CA_BUNDLE="${INSTALL_DIR}/bref/ssl/cert.pem"
 
-    WORKDIR  ${OPENSSL_BUILD_DIR}
+    WORKDIR  ${BUILD_DIR}/openssl/
 
     RUN set -xe \
         && curl -Ls https://github.com/openssl/openssl/releases/download/openssl-${VERSION_OPENSSL}/openssl-${VERSION_OPENSSL}.tar.gz \
@@ -154,9 +153,8 @@ libxml2:
     FROM +openssl
 
     ARG VERSION_XML2=2.11.5
-    ARG XML2_BUILD_DIR=${BUILD_DIR}/xml2
 
-    WORKDIR  ${XML2_BUILD_DIR}
+    WORKDIR  ${BUILD_DIR}/xml2/
 
     RUN set -xe \
         && curl -Ls https://download.gnome.org/sources/libxml2/${VERSION_XML2%.*}/libxml2-${VERSION_XML2}.tar.xz \
@@ -193,9 +191,8 @@ libssh2:
     FROM +libxml2
 
     ARG VERSION_LIBSSH2=1.11.0
-    ARG LIBSSH2_BUILD_DIR=${BUILD_DIR}/libssh2
 
-    WORKDIR  ${LIBSSH2_BUILD_DIR}
+    WORKDIR  ${BUILD_DIR}/libssh2/
 
     RUN set -xe \
         && curl -Ls https://github.com/libssh2/libssh2/releases/download/libssh2-${VERSION_LIBSSH2}/libssh2-${VERSION_LIBSSH2}.tar.gz \
@@ -232,9 +229,8 @@ libnghttp2:
     FROM +libssh2
 
     ARG VERSION_NGHTTP2=1.58.0
-    ARG NGHTTP2_BUILD_DIR=${BUILD_DIR}/nghttp2
 
-    WORKDIR  ${NGHTTP2_BUILD_DIR}
+    WORKDIR  ${BUILD_DIR}/nghttp2
 
     RUN set -xe \
         && curl -Ls https://github.com/nghttp2/nghttp2/releases/download/v${VERSION_NGHTTP2}/nghttp2-${VERSION_NGHTTP2}.tar.gz \
@@ -264,9 +260,8 @@ curl:
     FROM +libnghttp2
 
     ARG VERSION_CURL=8.4.0
-    ARG CURL_BUILD_DIR=${BUILD_DIR}/curl
 
-    WORKDIR  ${CURL_BUILD_DIR}
+    WORKDIR  ${BUILD_DIR}/curl/
 
     RUN set -xe \
         && curl -Ls https://github.com/curl/curl/archive/curl-${VERSION_CURL//./_}.tar.gz \
@@ -311,9 +306,8 @@ libzip:
     FROM +libnghttp2
 
     ARG VERSION_ZIP=1.10.1
-    ARG ZIP_BUILD_DIR=${BUILD_DIR}/zip
 
-    WORKDIR  ${ZIP_BUILD_DIR}
+    WORKDIR  ${BUILD_DIR}/zip/
 
     RUN set -xe \
         && curl -Ls https://github.com/nih-at/libzip/releases/download/v${VERSION_ZIP}/libzip-${VERSION_ZIP}.tar.gz \
@@ -339,9 +333,8 @@ libsodium:
     FROM +libzip
 
     ARG VERSION_LIBSODIUM=1.0.19
-    ARG LIBSODIUM_BUILD_DIR=${BUILD_DIR}/libsodium
 
-    WORKDIR  ${LIBSODIUM_BUILD_DIR}
+    WORKDIR  ${BUILD_DIR}/libsodium/
 
     RUN set -xe \
         && curl -Ls https://github.com/jedisct1/libsodium/archive/${VERSION_LIBSODIUM}.tar.gz \
@@ -368,9 +361,8 @@ postgres:
     FROM +libsodium
 
     ARG VERSION_POSTGRES=15.5
-    ARG POSTGRES_BUILD_DIR=${BUILD_DIR}/postgres
 
-    WORKDIR  ${POSTGRES_BUILD_DIR}
+    WORKDIR  ${BUILD_DIR}/postgres/
 
     RUN set -xe \
         && curl -Ls https://github.com/postgres/postgres/archive/REL_${VERSION_POSTGRES//./_}.tar.gz \
@@ -384,10 +376,10 @@ postgres:
         --prefix=${INSTALL_DIR} \
         --with-openssl \
         --without-readline
-    RUN cd ${POSTGRES_BUILD_DIR}/src/interfaces/libpq && make && make install
-    RUN cd ${POSTGRES_BUILD_DIR}/src/bin/pg_config && make && make install
-    RUN cd ${POSTGRES_BUILD_DIR}/src/backend && make generated-headers
-    RUN cd ${POSTGRES_BUILD_DIR}/src/include && make install
+    RUN cd src/interfaces/libpq && make && make install
+    RUN cd src/bin/pg_config && make && make install
+    RUN cd src/backend && make generated-headers
+    RUN cd src/include && make install
 
 # --------------------------------------------------------------- #
 # Builds and installs libsodium.
@@ -400,9 +392,8 @@ oniguruma:
     FROM +libsodium
 
     ARG VERSION_ONIG=6.9.9
-    ARG ONIG_BUILD_DIR=${BUILD_DIR}/oniguruma
 
-    WORKDIR  ${ONIG_BUILD_DIR}
+    WORKDIR  ${BUILD_DIR}/oniguruma/
 
     RUN set -xe \
         && curl -Ls https://github.com/kkos/oniguruma/releases/download/v${VERSION_ONIG}/onig-${VERSION_ONIG}.tar.gz \
@@ -421,9 +412,8 @@ php-install:
     FROM +oniguruma
 
     ARG VERSION_PHP=8.2.12
-    ENV PHP_BUILD_DIR=${BUILD_DIR}/php
 
-    WORKDIR ${PHP_BUILD_DIR}
+    WORKDIR ${BUILD_DIR}/php/
 
     RUN curl --location --silent --show-error --fail https://www.php.net/get/php-${VERSION_PHP}.tar.gz/from/this/mirror \
         | tar xzC . --strip-components=1
@@ -476,7 +466,8 @@ php-install:
     RUN mkdir -p ${INSTALL_DIR}/etc/php/ \
         && cp php.ini-production ${INSTALL_DIR}/etc/php/php.ini
 
-    SAVE ARTIFACT ${INSTALL_DIR}/sbin/php-fpm php-fpm
+    SAVE ARTIFACT ${INSTALL_DIR}/bin/php        php
+    SAVE ARTIFACT ${INSTALL_DIR}/sbin/php-fpm   php-fpm
 
 # --------------------------------------------------------------- #
 # Builds the APCu extension for PHP and exports it.
@@ -565,18 +556,21 @@ php-dependencies:
     RUN mkdir libraries
 
     # Get all extensions.
-    COPY +php-extensions/* extensions/
+    COPY +php-extensions/* ./extensions/
 
     # Get necessary files to filter dependencies.
-    COPY utils/copy-dependencies.php .
+    COPY utils/copy-dependencies .
     COPY +al2023-libraries/* .
 
-    # Get dependencies of PHP-FPM.
-    RUN php copy-dependencies.php ${INSTALL_DIR}/sbin/php-fpm ./libraries/ al2023-libraries.txt
+    # Get dependencies of PHP.
+    RUN ./copy-dependencies ${INSTALL_DIR}/bin/php        ./libraries/ al2023-libraries.txt
 
-    # Get dependencies of PHP extensions
+    # Get dependencies of PHP-FPM.
+    RUN ./copy-dependencies ${INSTALL_DIR}/sbin/php-fpm   ./libraries/ al2023-libraries.txt
+
+    # Get dependencies of PHP extensions.
     FOR extension IN $(ls extensions)
-        RUN php copy-dependencies.php "./extensions/${extension}" ./libraries/ al2023-libraries.txt
+        RUN ./copy-dependencies "./extensions/${extension}" ./libraries/ al2023-libraries.txt
     END
 
     # Export PHP dependencies.
