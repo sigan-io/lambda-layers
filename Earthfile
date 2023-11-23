@@ -56,6 +56,8 @@ php-fpm-dev:
     RUN chmod +x /opt/bootstrap
     RUN chmod +x /var/runtime/bootstrap
 
+    ENV PHP_INI_SCAN_DIR="/opt/bref/etc/php/conf.d:/var/task/php/conf.d:/var/task/php/conf.dev.d"
+
     SAVE IMAGE sigan.io/php-82-fpm-dev:latest
 
 # --------------------------------------------------------------- #
