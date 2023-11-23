@@ -17,13 +17,13 @@ ARG --global MAKEFLAGS='-j4'
 # --------------------------------------------------------------- #
 php-fpm:
     # Copy files to /opt, which is where the lambda layer lives.
-    COPY +php-install/php           /opt/bin/
-    COPY +php-install/php-fpm       /opt/bin/
+    COPY +php-install/php           /opt/bin/php
+    COPY +php-install/php-fpm       /opt/bin/php-fpm
     COPY +php-extensions/*          /opt/bref/extensions/
     COPY +php-dependencies/*        /opt/lib/
-    COPY layers/bootstrap.php       /opt/bref/bootstrap.php
-    COPY layers/fpm/bref.ini        /opt/bref/etc/php/conf.d/
+    COPY ini-files/php-fpm.ini      /opt/bref/etc/php/conf.d/bref.ini
     COPY layers/fpm/php-fpm.conf    /opt/bref/etc/php-fpm.conf
+    COPY layers/bootstrap.php       /opt/bref/bootstrap.php
     COPY layers/fpm/bootstrap.sh    /opt/bootstrap
 
     # Copy files to /var/runtime to support deploying as a Docker image
@@ -33,6 +33,37 @@ php-fpm:
     RUN chmod +x /var/runtime/bootstrap
 
     SAVE IMAGE sigan.io/php-82-fpm:latest
+
+# --------------------------------------------------------------- #
+# Builds a development image for AWS's PHP-FPM custom runtime.
+# --------------------------------------------------------------- #
+php-fpm-dev:
+    # Copy files to /opt, which is where the lambda layer lives.
+    # (This dev version includes the XDebug extension)
+    COPY +php-install/php           /opt/bin/php
+    COPY +php-install/php-fpm       /opt/bin/php-fpm
+    COPY +php-xdebug/*              /opt/bref/extensions/
+    COPY +php-extensions/*          /opt/bref/extensions/
+    COPY +php-dependencies/*        /opt/lib/
+    COPY ini-files/php-fpm-dev.ini  /opt/bref/etc/php/conf.d/bref.ini
+    COPY layers/fpm/php-fpm.conf    /opt/bref/etc/php-fpm.conf
+    COPY layers/bootstrap.php       /opt/bref/bootstrap.php
+    COPY layers/fpm/bootstrap.sh    /opt/bootstrap
+
+    # Copy files to /var/runtime to support deploying as a Docker image
+    COPY layers/fpm/bootstrap.sh    /var/runtime/bootstrap
+
+    RUN chmod +x /opt/bootstrap
+    RUN chmod +x /var/runtime/bootstrap
+
+    SAVE IMAGE sigan.io/php-82-fpm-dev:latest
+
+# --------------------------------------------------------------- #
+# Builds all images for AWS's PHP-FPM custom runtime.
+# --------------------------------------------------------------- #
+php-fpm-all:
+    BUILD +php-fpm
+    BUILD +php-fpm-dev
 
 # --------------------------------------------------------------- #
 # Generates a list of all the libraries installed by default.
@@ -524,6 +555,25 @@ php-igbinary:
     RUN make
 
     SAVE ARTIFACT modules/igbinary.so
+
+# --------------------------------------------------------------- #
+# Builds the igbinary extension for PHP and exports it.
+# --------------------------------------------------------------- #
+php-xdebug:
+    FROM +php-install
+
+    WORKDIR ${BUILD_DIR}/xdebug/
+
+    RUN set -xe \
+        && curl -Ls https://pecl.php.net/get/xdebug \
+        | tar -xzC . --strip-components=1
+
+    RUN phpize
+    RUN ./configure \
+        --enable-xdebug
+    RUN make
+
+    SAVE ARTIFACT modules/xdebug.so
 
 # --------------------------------------------------------------- #
 # Groups all PHP extensions in one place and exports them.
