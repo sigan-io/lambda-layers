@@ -61,14 +61,6 @@ php-fpm-dev:
     SAVE IMAGE sigan.io/php-82-fpm-dev:latest
 
 # --------------------------------------------------------------- #
-# Builds all images for AWS's PHP-FPM custom runtime.
-# --------------------------------------------------------------- #
-# TODO: fix this
-php-fpm-all:
-    BUILD +php-fpm
-    BUILD +php-fpm-dev
-
-# --------------------------------------------------------------- #
 # Generates a list of all the libraries installed by default.
 # --------------------------------------------------------------- #
 al2023-libraries:
