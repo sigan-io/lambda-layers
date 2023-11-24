@@ -1,3 +1,4 @@
+#!/usr/bin/env php
 <?php declare(strict_types=1);
 
 /********************************************************
@@ -5,10 +6,10 @@
  * Copies the system dependencies used by a binary/extension.
  *
  * Usage:
- *    php copy-dependencies.php <file-to-analyze> <target-directory>
+ *    copy-dependencies <file-to-analyze> <target-directory>
  *
  * For example:
- *    php copy-dependencies.php /opt/bin/php /opt/lib
+ *    copy-dependencies /opt/bin/php /opt/lib
  *
  ********************************************************/
 
@@ -16,77 +17,89 @@ if (! ($argv[1] ?? false)) {
     echo 'Missing the first argument, check the file to see how to use it' . PHP_EOL;
     exit(1);
 }
+
 if (! ($argv[2] ?? false)) {
     echo 'Missing the second argument, check the file to see how to use it' . PHP_EOL;
     exit(1);
 }
-[$_, $pathToCheck, $targetDirectory] = $argv;
+
+[$_, $extension, $target_directory, $libraries_index] = $argv;
 
 // Create the target directory if it doesn't exist
-if (! is_dir($targetDirectory)) {
-    mkdir($targetDirectory, 0777, true);
+if (! is_dir($target_directory)) {
+    mkdir($target_directory, 0777, true);
 }
 
-$arch = 'x86';
-if (php_uname('m') !== 'x86_64') {
-    $arch = 'arm';
-}
+$default_libraries = file(__DIR__ . "/" . $libraries_index);
+$default_libraries = array_map('trim', $default_libraries);
 
-$librariesThatExistOnLambda = file(__DIR__ . "/libs-$arch.txt");
-$librariesThatExistOnLambda = array_map('trim', $librariesThatExistOnLambda);
 // For some reason some libraries are actually not in Lambda, despite being in the docker image 🤷
-$librariesThatExistOnLambda = array_filter($librariesThatExistOnLambda, function ($library) {
-    return ! str_contains($library, 'libgcrypt.so') && ! str_contains($library, 'libgpg-error.so');
-});
+// $default_libraries = array_filter($default_libraries, function ($extension) {
+//     return ! str_contains($extension, 'libgcrypt.so') && ! str_contains($extension, 'libgpg-error.so');
+// });
 
-$requiredLibraries = listDependencies($pathToCheck);
+$required_libraries = list_dependencies($extension);
+
 // Exclude existing system libraries
-$requiredLibraries = array_filter($requiredLibraries, function (string $lib) use ($librariesThatExistOnLambda) {
+$required_libraries = array_filter($required_libraries, function (string $lib) use ($default_libraries) {
     // Libraries that we compiled are in /opt/lib or /opt/lib64, we compiled them because they are more
     // recent than the ones in Lambda so we definitely want to use them
-    $isALibraryWeCompiled = str_starts_with($lib, '/opt/lib');
-    $doesNotExistInLambda = !in_array(basename($lib), $librariesThatExistOnLambda, true);
-    $keep = $isALibraryWeCompiled || $doesNotExistInLambda;
+    $is_compiled_library = str_starts_with($lib, '/opt/lib');
+    $is_not_in_lambda = !in_array(basename($lib), $default_libraries, true);
+
+    $keep = $is_compiled_library || $is_not_in_lambda;
+
     if (! $keep) {
         echo "Skipping $lib because it's already in Lambda" . PHP_EOL;
     }
+
     return $keep;
 });
 
 // Copy all the libraries
-foreach ($requiredLibraries as $libraryPath) {
-    $targetPath = $targetDirectory . '/' . basename($libraryPath);
-    echo "Copying $libraryPath to $targetPath" . PHP_EOL;
-    $success = copy($libraryPath, $targetPath);
-    if (! $success) {
-        throw new RuntimeException("Could not copy $libraryPath to $targetPath");
+foreach ($required_libraries as $library_path) {
+    $target_path = $target_directory . '/' . basename($library_path);
+
+    echo "Copying $library_path to $target_path" . PHP_EOL;
+
+    $success = copy($library_path, $target_path);
+
+    if (!$success) {
+        throw new RuntimeException("Could not copy $library_path to $target_path");
     }
 }
 
 
-function listDependencies(string $path): array
-{
+function list_dependencies(string $extension): array {
     // ldd lists the dependencies of a binary or library/extension (.so file)
-    exec("ldd $path 2>&1", $lines);
+    exec("ldd $extension 2>&1", $lines);
+
     if (str_contains(end($lines), 'exited with unknown exit code (139)')) {
         // We can't use `ldd` on binaries (like /opt/bin/php) because it fails on cross-platform builds
         // so we fall back to `LD_TRACE_LOADED_OBJECTS` (which doesn't work for .so files, that's why we also try `ldd`)
         // See https://stackoverflow.com/a/35905007/245552
-        $output = shell_exec("LD_TRACE_LOADED_OBJECTS=1 $path 2>&1");
+        $output = shell_exec("LD_TRACE_LOADED_OBJECTS=1 $extension 2>&1");
+
         if (!$output) {
-            throw new RuntimeException("Could not list dependencies for $path");
+            throw new RuntimeException("Could not list dependencies for $extension");
         }
+
         $lines = explode(PHP_EOL, $output);
     }
+
     $dependencies = [];
+
     foreach ($lines as $line) {
         if (str_ends_with($line, ' => not found')) {
-            throw new RuntimeException("This library is a dependency for $path but cannot be found by 'ldd':\n$line\n");
+            throw new RuntimeException("This library is a dependency for $extension but cannot be found by 'ldd':\n$line\n");
         }
+
         $matches = [];
+
         if (preg_match('/=> (.*) \(0x[0-9a-f]+\)/', $line, $matches)) {
             $dependencies[] = $matches[1];
         }
     }
+
     return $dependencies;
 }
