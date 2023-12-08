@@ -13,6 +13,7 @@ The Docker image is engineered to emulate AWS Lambda's environment, enabling mor
 Built on Amazon Linux 2023 (`provided.al2023`), the image incorporates PHP 8.2 and essential extensions for WordPress compatibility. Prioritizing a lean build, it excludes extensions not vital for WordPress or Sigan.io's requirements, such as `postgres`.
 
 ### Requirements
+
 We use [Earthly](https://earthly.dev/) to build the image and [Docker](https://www.docker.com/) to run it locally. You need to have both installed for local development.
 
 ### Usage

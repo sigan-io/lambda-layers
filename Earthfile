@@ -16,6 +16,9 @@ ARG --global MAKEFLAGS='-j4'
 # Builds an image for AWS's PHP-FPM custom runtime.
 # --------------------------------------------------------------- #
 php-fpm:
+    # Directory for AWS Lambda Extensions
+    RUN mkdir                       /opt/extensions
+
     # Copy files to /opt, which is where the lambda layer lives.
     COPY +php-install/php           /opt/bin/php
     COPY +php-install/php-fpm       /opt/bin/php-fpm
@@ -25,12 +28,19 @@ php-fpm:
     COPY fpm/php-fpm.conf           /opt/bref/etc/php-fpm.conf
     COPY fpm/bootstrap.php          /opt/bref/bootstrap.php
     COPY fpm/bootstrap.sh           /opt/bootstrap
+    COPY fpm/sigan-entrypoint.sh    /sigan-entrypoint.sh
 
     # Copy files to /var/runtime to support deploying as a Docker image
-    COPY fpm/bootstrap.sh    /var/runtime/bootstrap
+    COPY fpm/bootstrap.sh           /var/runtime/bootstrap
 
     RUN chmod +x /opt/bootstrap
     RUN chmod +x /var/runtime/bootstrap
+    RUN chmod +x /sigan-entrypoint.sh
+
+    # We override the entrypoint to pass the lambda handler as an argument.
+    ENTRYPOINT ["/sigan-entrypoint.sh"]
+
+    EXPOSE 8080
 
     SAVE IMAGE sigan.io/php-82-fpm:latest
 
@@ -38,6 +48,9 @@ php-fpm:
 # Builds a development image for AWS's PHP-FPM custom runtime.
 # --------------------------------------------------------------- #
 php-fpm-dev:
+    # Directory for AWS Lambda Extensions
+    RUN mkdir                       /opt/extensions
+
     # Copy files to /opt, which is where the lambda layer lives.
     # (This dev version includes the XDebug extension)
     COPY +php-install/php           /opt/bin/php
@@ -49,14 +62,21 @@ php-fpm-dev:
     COPY fpm/php-fpm.conf           /opt/bref/etc/php-fpm.conf
     COPY fpm/bootstrap.php          /opt/bref/bootstrap.php
     COPY fpm/bootstrap.sh           /opt/bootstrap
+    COPY fpm/sigan-entrypoint.sh    /sigan-entrypoint.sh
 
     # Copy files to /var/runtime to support deploying as a Docker image
-    COPY fpm/bootstrap.sh    /var/runtime/bootstrap
+    COPY fpm/bootstrap.sh           /var/runtime/bootstrap
 
     RUN chmod +x /opt/bootstrap
     RUN chmod +x /var/runtime/bootstrap
+    RUN chmod +x /sigan-entrypoint.sh
 
     ENV PHP_INI_SCAN_DIR="/opt/bref/etc/php/conf.d:/var/task/php/conf.d:/var/task/php/conf.dev.d"
+
+    # We override the entrypoint to pass the lambda handler as an argument.
+    ENTRYPOINT ["/sigan-entrypoint.sh"]
+
+    EXPOSE 8080
 
     SAVE IMAGE sigan.io/php-82-fpm-dev:latest
 
