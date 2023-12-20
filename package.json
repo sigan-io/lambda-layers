@@ -4,6 +4,10 @@
 	"scripts": {
 		"build": "npm run build:wp-php && npm run build:wp-php-dev",
 		"build:wp-php": "earthly +wp-php",
-		"build:wp-php-dev": "earthly +wp-php-dev"
+		"build:wp-php-dev": "earthly +wp-php-dev",
+		"publish-image": "npm run publish:wp-php-image && npm run publish:wp-php-dev-image",
+		"publish-image:wp-php": "earthly --push +wp-php",
+		"publish-image:wp-php-dev": "earthly --push +wp-php-dev",
+		"publish-layer:wp-php": "earthly --dotenv .env +wp-php-layer"
 	}
 }
