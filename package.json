@@ -1,9 +1,9 @@
 {
-	"name": "@sigan.io/aws-lambda-layers",
+	"name": "@sigan.io/lambda-layers",
 	"version": "1.0.0",
 	"scripts": {
-		"build": "npm run build:php-fpm && npm run build:php-fpm-dev",
-		"build:php-fpm": "earthly +php-fpm",
-		"build:php-fpm-dev": "earthly +php-fpm-dev"
+		"build": "npm run build:wp-php && npm run build:wp-php-dev",
+		"build:wp-php": "earthly +wp-php",
+		"build:wp-php-dev": "earthly +wp-php-dev"
 	}
 }

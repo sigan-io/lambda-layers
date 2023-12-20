@@ -16,29 +16,28 @@ ARG --global MAKEFLAGS='-j4'
 # Builds an image for AWS's PHP-FPM custom runtime.
 # --------------------------------------------------------------- #
 wp-php:
-    # Directory for AWS Lambda Extensions
-    RUN mkdir                       /opt/extensions
+    # Directory for AWS Lambda Extensions (to prevent a warning when starting runtime).
+    RUN mkdir                           /opt/extensions
 
-    # Copy files to /opt, which is where the lambda layer lives.
-    COPY +php-install/php           /opt/bin/php
-    COPY +php-install/php-fpm       /opt/bin/php-fpm
-    COPY +php-extensions/*          /opt/bref/extensions/
-    COPY +php-dependencies/*        /opt/lib/
-    COPY fpm/php-fpm.ini            /opt/bref/etc/php/conf.d/php-fpm.ini
-    COPY fpm/php-fpm.conf           /opt/bref/etc/php-fpm.conf
-    COPY fpm/bootstrap.php          /opt/bref/bootstrap.php
-    COPY fpm/bootstrap.sh           /opt/bootstrap
-    COPY fpm/sigan-entrypoint.sh    /sigan-entrypoint.sh
-
-    # Copy bootstrap to /var/runtime to support deploying as a Docker image
-    COPY fpm/bootstrap.sh           /var/runtime/bootstrap
+    # Copy layer files to /opt, which is the dir lambda uses for layers.
+    COPY +php-install/php               /opt/bin/php
+    COPY +php-install/php-fpm           /opt/bin/php-fpm
+    COPY +php-extensions/*              /opt/bref/extensions/
+    COPY +php-dependencies/*            /opt/lib/
+    COPY wp-php/php-fpm.ini             /opt/bref/etc/php/conf.d/php-fpm.ini
+    COPY wp-php/php-fpm.conf            /opt/bref/etc/php-fpm.conf
+    COPY wp-php/bootstrap.php           /opt/bref/bootstrap.php
+    COPY wp-php/bootstrap.sh            /opt/bootstrap
 
     RUN chmod +x /opt/bootstrap
-    RUN chmod +x /var/runtime/bootstrap
-    RUN chmod +x /sigan-entrypoint.sh
+    
+    # Entrypoint file used by RIE when running as Docker image.
+    COPY wp-php/wp-php-entrypoint.sh    /wp-php-entrypoint.sh
+
+    RUN chmod +x /wp-php-entrypoint.sh
 
     # We override the entrypoint to pass the lambda handler as an argument.
-    ENTRYPOINT ["/sigan-entrypoint.sh"]
+    ENTRYPOINT ["/wp-php-entrypoint.sh"]
 
     EXPOSE 8080
 
@@ -49,33 +48,32 @@ wp-php:
 # Builds a development image for AWS's PHP-FPM custom runtime.
 # --------------------------------------------------------------- #
 wp-php-dev:
-    # Directory for AWS Lambda Extensions
-    RUN mkdir                       /opt/extensions
+    # Directory for AWS Lambda Extensions (to prevent a warning when starting runtime).
+    RUN mkdir                           /opt/extensions
 
-    # Copy files to /opt, which is where the lambda layer lives.
+    # Copy layer files to /opt, which is the dir lambda uses for layers.
     # (This dev version includes the XDebug extension)
-    COPY +php-install/php           /opt/bin/php
-    COPY +php-install/php-fpm       /opt/bin/php-fpm
-    COPY +php-xdebug/*              /opt/bref/extensions/
-    COPY +php-extensions/*          /opt/bref/extensions/
-    COPY +php-dependencies/*        /opt/lib/
-    COPY fpm/php-fpm-dev.ini        /opt/bref/etc/php/conf.d/php-fpm-dev.ini
-    COPY fpm/php-fpm.conf           /opt/bref/etc/php-fpm.conf
-    COPY fpm/bootstrap.php          /opt/bref/bootstrap.php
-    COPY fpm/bootstrap.sh           /opt/bootstrap
-    COPY fpm/sigan-entrypoint.sh    /sigan-entrypoint.sh
-
-    # Copy files to /var/runtime to support deploying as a Docker image
-    COPY fpm/bootstrap.sh           /var/runtime/bootstrap
-
+    COPY +php-install/php               /opt/bin/php
+    COPY +php-install/php-fpm           /opt/bin/php-fpm
+    COPY +php-xdebug/*                  /opt/bref/extensions/
+    COPY +php-extensions/*              /opt/bref/extensions/
+    COPY +php-dependencies/*            /opt/lib/
+    COPY wp-php/php-fpm-dev.ini         /opt/bref/etc/php/conf.d/php-fpm-dev.ini
+    COPY wp-php/php-fpm.conf            /opt/bref/etc/php-fpm.conf
+    COPY wp-php/bootstrap.php           /opt/bref/bootstrap.php
+    COPY wp-php/bootstrap.sh            /opt/bootstrap
+    
     RUN chmod +x /opt/bootstrap
-    RUN chmod +x /var/runtime/bootstrap
-    RUN chmod +x /sigan-entrypoint.sh
+
+    # Entrypoint file used by RIE when running as Docker image.
+    COPY wp-php/wp-php-entrypoint.sh    /wp-php-entrypoint.sh
+
+    RUN chmod +x /wp-php-entrypoint.sh
 
     ENV PHP_INI_SCAN_DIR="/opt/bref/etc/php/conf.d:/var/task/php/conf.d:/var/task/php/conf.dev.d"
 
     # We override the entrypoint to pass the lambda handler as an argument.
-    ENTRYPOINT ["/sigan-entrypoint.sh"]
+    ENTRYPOINT ["/wp-php-entrypoint.sh"]
 
     EXPOSE 8080
 
