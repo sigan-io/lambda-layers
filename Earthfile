@@ -15,7 +15,7 @@ ARG --global MAKEFLAGS='-j4'
 # --------------------------------------------------------------- #
 # Builds an image for AWS's PHP-FPM custom runtime.
 # --------------------------------------------------------------- #
-php-fpm:
+wp-php:
     # Directory for AWS Lambda Extensions
     RUN mkdir                       /opt/extensions
 
@@ -30,7 +30,7 @@ php-fpm:
     COPY fpm/bootstrap.sh           /opt/bootstrap
     COPY fpm/sigan-entrypoint.sh    /sigan-entrypoint.sh
 
-    # Copy files to /var/runtime to support deploying as a Docker image
+    # Copy bootstrap to /var/runtime to support deploying as a Docker image
     COPY fpm/bootstrap.sh           /var/runtime/bootstrap
 
     RUN chmod +x /opt/bootstrap
@@ -42,12 +42,13 @@ php-fpm:
 
     EXPOSE 8080
 
-    SAVE IMAGE sigan.io/php-82-fpm:latest
+    SAVE IMAGE --push siganio/wp-php-82:0.1.0
+    SAVE IMAGE --push siganio/wp-php-82:latest
 
 # --------------------------------------------------------------- #
 # Builds a development image for AWS's PHP-FPM custom runtime.
 # --------------------------------------------------------------- #
-php-fpm-dev:
+wp-php-dev:
     # Directory for AWS Lambda Extensions
     RUN mkdir                       /opt/extensions
 
@@ -78,17 +79,8 @@ php-fpm-dev:
 
     EXPOSE 8080
 
-    SAVE IMAGE sigan.io/php-82-fpm-dev:latest
-
-# --------------------------------------------------------------- #
-# Generates a list of all the libraries installed by default.
-# --------------------------------------------------------------- #
-al2023-libraries:
-    WORKDIR ${BUILD_DIR}
-
-    RUN ls -p /lib64/ | grep -v / | sort > al2023-libraries.txt
-
-    SAVE ARTIFACT al2023-libraries.txt
+    SAVE IMAGE --push siganio/wp-php-82:0.1.0-dev
+    SAVE IMAGE --push siganio/wp-php-82:latest-dev
 
 # --------------------------------------------------------------- #
 # Installs all the needed dependencies to build and install PHP.
@@ -292,7 +284,7 @@ libnghttp2:
     RUN make install
 
 # --------------------------------------------------------------- #
-# Builds and installs curl.
+# Builds and installs curl. (NOT USED)
 # Releases: https://github.com/curl/curl/releases
 # Needs:
 #   - zlib
@@ -395,15 +387,15 @@ libsodium:
 
     RUN make install
 
+# --------------------------------------------------------------- #
+# Builds and installs Postgres. (NOT USED)
+# Releases: https://github.com/postgres/postgres/releases
+# Needs:
+#   - OpenSSL
+# Needed by:
+#   - php
+# --------------------------------------------------------------- #
 postgres:
-    ###############################################################################
-    # Postgres
-    # https://github.com/postgres/postgres/releases
-    # Needs:
-    #   - OpenSSL
-    # Needed by:
-    #   - php
-
     FROM +libsodium
 
     ARG VERSION_POSTGRES=15.5
@@ -429,7 +421,7 @@ postgres:
 
 # --------------------------------------------------------------- #
 # Builds and installs libsodium.
-# (Maybe this build is not needed. We need to try to install it with dnf)
+# (TODO: Maybe this build is not needed. We need to try to install it with dnf)
 # Releases: https://github.com/kkos/oniguruma/releases
 # Needed by:
 #   - mbstring
@@ -608,6 +600,16 @@ php-extensions:
 
     # Export PHP extensions.
     SAVE ARTIFACT *
+
+# --------------------------------------------------------------- #
+# Generates a list of all the libraries installed by default.
+# --------------------------------------------------------------- #
+al2023-libraries:
+    WORKDIR ${BUILD_DIR}
+
+    RUN ls -p /lib64/ | grep -v / | sort > al2023-libraries.txt
+
+    SAVE ARTIFACT al2023-libraries.txt
 
 # --------------------------------------------------------------- #
 # Puts together the needed dependencies for PHP and exports them.
