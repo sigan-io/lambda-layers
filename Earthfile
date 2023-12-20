@@ -13,7 +13,7 @@ ARG --global CMAKE_BUILD_PARALLEL_LEVEL=4
 ARG --global MAKEFLAGS='-j4'
 
 # --------------------------------------------------------------- #
-# Builds an image for AWS's PHP-FPM custom runtime.
+# Builds an image for AWS's WP-PHP custom runtime.
 # --------------------------------------------------------------- #
 wp-php:
     # Directory for AWS Lambda Extensions (to prevent a warning when starting runtime).
@@ -30,6 +30,8 @@ wp-php:
     COPY wp-php/bootstrap.sh            /opt/bootstrap
 
     RUN chmod +x /opt/bootstrap
+
+    SAVE ARTIFACT /opt/* runtime
     
     # Entrypoint file used by RIE when running as Docker image.
     COPY wp-php/wp-php-entrypoint.sh    /wp-php-entrypoint.sh
@@ -45,7 +47,7 @@ wp-php:
     SAVE IMAGE --push siganio/wp-php-82:latest
 
 # --------------------------------------------------------------- #
-# Builds a development image for AWS's PHP-FPM custom runtime.
+# Builds a development image for AWS's WP-PHP custom runtime.
 # --------------------------------------------------------------- #
 wp-php-dev:
     # Directory for AWS Lambda Extensions (to prevent a warning when starting runtime).
@@ -79,6 +81,63 @@ wp-php-dev:
 
     SAVE IMAGE --push siganio/wp-php-82:0.1.0-dev
     SAVE IMAGE --push siganio/wp-php-82:latest-dev
+
+# --------------------------------------------------------------- #
+# Publishes the WP-PHP runtime layer to AWS Lambda.
+# --------------------------------------------------------------- #
+wp-php-layer:
+    WORKDIR ${BUILD_DIR}
+
+    # Install zip libraries needed to zip the layer and install AWS CLI.
+    RUN LD_LIBRARY_PATH= dnf install -y zip
+    RUN LD_LIBRARY_PATH= dnf install -y unzip
+    RUN LD_LIBRARY_PATH= dnf install -y less
+
+    WORKDIR ${BUILD_DIR}/awscli/
+
+    # Install AWS CLI.
+    RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
+    RUN unzip -qo awscliv2.zip
+    RUN ./aws/install
+
+    WORKDIR ${BUILD_DIR}/layer/
+
+    WAIT
+        BUILD +wp-php
+    END
+
+    # Copy runtime files.
+    COPY +wp-php/runtime .
+
+    # AWS Credentials.
+    ARG --required AWS_REGION
+    ARG --required AWS_ACCESS_KEY_ID
+    ARG --required AWS_SECRET_ACCESS_KEY
+
+    ARG LAYER_NAME=wp-php
+
+    # Zip the layer files to upload them.
+    RUN zip --quiet --recurse-paths "$LAYER_NAME.zip" .
+
+    # Start publishing the layer.
+    RUN aws lambda publish-layer-version \
+        --layer-name $LAYER_NAME \
+        --description "Bref PHP Runtime optimized for WordPress" \
+        --license-info MIT \
+        --zip-file fileb://./$LAYER_NAME.zip \
+        --compatible-runtimes provided.al2023 \
+        --compatible-architectures arm64
+
+    # Get the latest layer version to set permissions later.
+    ARG LAYER_VERSION=$(aws lambda list-layer-versions --layer-name $LAYER_NAME --query "LayerVersions[0].Version" --output text)
+
+    # Set layer permissions to be publicly accessible.
+    RUN aws lambda add-layer-version-permission \
+        --layer-name $LAYER_NAME \
+        --version-number $LAYER_VERSION \
+        --statement-id public \
+        --action lambda:GetLayerVersion \
+        --principal "*"
 
 # --------------------------------------------------------------- #
 # Installs all the needed dependencies to build and install PHP.
