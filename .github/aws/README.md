@@ -8,4 +8,4 @@ This needs to be done once in the AWS console (because no access keys have permi
 
 - file: `github-role.yml`
 - stack name: github-oidc-provider
-- `FullRepoName` parameter: `brefphp/aws-lambda-layers`
+- `FullRepoName` parameter: `sigan-io/lambda-layers`

@@ -16,22 +16,8 @@ ARG --global MAKEFLAGS='-j4'
 # Builds an image for AWS's WP-PHP custom runtime.
 # --------------------------------------------------------------- #
 wp-php:
-    # Directory for AWS Lambda Extensions (to prevent a warning when starting runtime).
-    RUN mkdir                           /opt/extensions
-
-    # Copy layer files to /opt, which is the dir lambda uses for layers.
-    COPY +php-install/php               /opt/bin/php
-    COPY +php-install/php-fpm           /opt/bin/php-fpm
-    COPY +php-extensions/*              /opt/bref/extensions/
-    COPY +php-dependencies/*            /opt/lib/
-    COPY wp-php/php-fpm.ini             /opt/bref/etc/php/conf.d/php-fpm.ini
-    COPY wp-php/php-fpm.conf            /opt/bref/etc/php-fpm.conf
-    COPY wp-php/bootstrap.php           /opt/bref/bootstrap.php
-    COPY wp-php/bootstrap.sh            /opt/bootstrap
-
-    RUN chmod +x /opt/bootstrap
-
-    SAVE ARTIFACT /opt/* runtime
+    # Move the layer content to /opt, which is the lambda dir for layers.
+    COPY +layer-content/* /opt/
     
     # Entrypoint file used by RIE when running as Docker image.
     COPY wp-php/wp-php-entrypoint.sh    /wp-php-entrypoint.sh
@@ -43,29 +29,15 @@ wp-php:
 
     EXPOSE 8080
 
-    SAVE IMAGE --push siganio/wp-php-82:0.1.0
+    SAVE IMAGE --push siganio/wp-php-82:0.1.0 
     SAVE IMAGE --push siganio/wp-php-82:latest
 
 # --------------------------------------------------------------- #
 # Builds a development image for AWS's WP-PHP custom runtime.
 # --------------------------------------------------------------- #
 wp-php-dev:
-    # Directory for AWS Lambda Extensions (to prevent a warning when starting runtime).
-    RUN mkdir                           /opt/extensions
-
-    # Copy layer files to /opt, which is the dir lambda uses for layers.
-    # (This dev version includes the XDebug extension)
-    COPY +php-install/php               /opt/bin/php
-    COPY +php-install/php-fpm           /opt/bin/php-fpm
-    COPY +php-xdebug/*                  /opt/bref/extensions/
-    COPY +php-extensions/*              /opt/bref/extensions/
-    COPY +php-dependencies/*            /opt/lib/
-    COPY wp-php/php-fpm-dev.ini         /opt/bref/etc/php/conf.d/php-fpm-dev.ini
-    COPY wp-php/php-fpm.conf            /opt/bref/etc/php-fpm.conf
-    COPY wp-php/bootstrap.php           /opt/bref/bootstrap.php
-    COPY wp-php/bootstrap.sh            /opt/bootstrap
-    
-    RUN chmod +x /opt/bootstrap
+    # Move the layer content to /opt, which is the lambda dir for layers.
+    COPY (+layer-content/* --DEV=true) /opt/
 
     # Entrypoint file used by RIE when running as Docker image.
     COPY wp-php/wp-php-entrypoint.sh    /wp-php-entrypoint.sh
@@ -103,16 +75,11 @@ wp-php-layer:
     WORKDIR ${BUILD_DIR}/layer/
 
     WAIT
-        BUILD +wp-php
+        BUILD +layer-content
     END
 
     # Copy runtime files.
-    COPY +wp-php/runtime .
-
-    # AWS Credentials.
-    ARG --required AWS_REGION
-    ARG --required AWS_ACCESS_KEY_ID
-    ARG --required AWS_SECRET_ACCESS_KEY
+    COPY +layer-content/* .
 
     ARG LAYER_NAME=wp-php
 
@@ -120,24 +87,39 @@ wp-php-layer:
     RUN zip --quiet --recurse-paths "$LAYER_NAME.zip" .
 
     # Start publishing the layer.
-    RUN aws lambda publish-layer-version \
+    RUN --secret AWS_REGION \
+        --secret AWS_ACCESS_KEY_ID \
+        --secret AWS_SECRET_ACCESS_KEY \
+        aws lambda publish-layer-version \
         --layer-name $LAYER_NAME \
         --description "Bref PHP Runtime optimized for WordPress" \
         --license-info MIT \
         --zip-file fileb://./$LAYER_NAME.zip \
         --compatible-runtimes provided.al2023 \
-        --compatible-architectures arm64
+        --compatible-architectures arm64 \
+        > /dev/null 2>&1
 
-    # Get the latest layer version to set permissions later.
-    ARG LAYER_VERSION=$(aws lambda list-layer-versions --layer-name $LAYER_NAME --query "LayerVersions[0].Version" --output text)
+    # Get the latest layer version and arn and store them in files
+    # (we do this because env variables in RUN are scoped to the current command only).
+    RUN --secret AWS_REGION \
+        --secret AWS_ACCESS_KEY_ID \
+        --secret AWS_SECRET_ACCESS_KEY \
+        read -ra VALUES <<< $(aws lambda list-layer-versions --layer-name $LAYER_NAME --query "LayerVersions[0].[Version, LayerVersionArn]" --output text) \
+        && echo "${VALUES[0]}" > LAYER_VERSION \
+        && echo "${VALUES[1]}" > LAYER_VERSION_ARN
 
     # Set layer permissions to be publicly accessible.
-    RUN aws lambda add-layer-version-permission \
+    RUN --secret AWS_REGION \
+        --secret AWS_ACCESS_KEY_ID \
+        --secret AWS_SECRET_ACCESS_KEY \
+        aws lambda add-layer-version-permission \
         --layer-name $LAYER_NAME \
-        --version-number $LAYER_VERSION \
+        --version-number $(cat LAYER_VERSION) \
         --statement-id public \
         --action lambda:GetLayerVersion \
         --principal "*"
+
+    RUN echo -e "\n\e[36mLayer Version ARN:\e[0m $(cat LAYER_VERSION_ARN)\n"
 
 # --------------------------------------------------------------- #
 # Installs all the needed dependencies to build and install PHP.
@@ -656,7 +638,7 @@ php-extensions:
     COPY +php-igbinary/*    .
 
     # Export PHP extensions.
-    SAVE ARTIFACT *
+    SAVE ARTIFACT .
 
 # --------------------------------------------------------------- #
 # Generates a list of all the libraries installed by default.
@@ -703,3 +685,33 @@ php-dependencies:
 
     # Export PHP dependencies.
     SAVE ARTIFACT libraries/*
+
+# --------------------------------------------------------------- #
+# Puts together the layer content for the custom runtime.
+# --------------------------------------------------------------- #
+layer-content:
+    WORKDIR ${BUILD_DIR}/layer-content/
+
+    # Set environment variable to conditionally install dev extensions (i.e. xdebug).
+    ARG DEV=false
+
+    # Directory for AWS Lambda Extensions (to prevent a warning when starting runtime).
+    RUN mkdir                           ./extensions
+
+    # Copy layer files to /opt, which is the dir lambda uses for layers.
+    COPY +php-install/php               ./bin/php
+    COPY +php-install/php-fpm           ./bin/php-fpm
+    COPY +php-extensions/*              ./bref/extensions/
+    COPY +php-dependencies/*            ./lib/
+    COPY wp-php/php-fpm.ini             ./bref/etc/php/conf.d/php-fpm.ini
+    COPY wp-php/php-fpm.conf            ./bref/etc/php-fpm.conf
+    COPY wp-php/bootstrap.php           ./bref/bootstrap.php
+    COPY wp-php/bootstrap.sh            ./bootstrap
+
+    IF [ "$DEV" = true ]
+        COPY +php-xdebug/*              ./bref/extensions/
+    END
+
+    RUN chmod +x ./bootstrap
+
+    SAVE ARTIFACT .
