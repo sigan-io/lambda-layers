@@ -1,6 +1,6 @@
 # AWS Lambda layer customized for WordPress
 
->  **Notice**
+>  [!NOTE]
 >
 > This project is a fork of [brefphp/aws-lambda-layers](https://github.com/brefphp/aws-lambda-layers).
 >
