@@ -1,6 +1,9 @@
 <?php declare(strict_types=1);
 
-$autoload_path = getenv('BREF_AUTOLOAD_PATH') ?: '/var/vendor/autoload.php';
+echo "[INFO] PHP running.";
+
+$task_root = getenv('LAMBDA_TASK_ROOT') ?: '/var/task';
+$autoload_path = getenv('BREF_AUTOLOAD_PATH') ?: $task_root . '/vendor/autoload.php';
 
 require $autoload_path;
 

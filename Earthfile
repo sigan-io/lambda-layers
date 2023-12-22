@@ -74,10 +74,6 @@ wp-php-layer:
 
     WORKDIR ${BUILD_DIR}/layer/
 
-    WAIT
-        BUILD +layer-content
-    END
-
     # Copy runtime files.
     COPY +layer-content/* .
 
@@ -87,24 +83,20 @@ wp-php-layer:
     RUN zip --quiet --recurse-paths "$LAYER_NAME.zip" .
 
     # Start publishing the layer.
+    # (Version and Layer Version ARN are outputed to files because
+    # env variables are not scoped outside the current command)
     RUN --secret AWS_REGION \
         --secret AWS_ACCESS_KEY_ID \
         --secret AWS_SECRET_ACCESS_KEY \
-        aws lambda publish-layer-version \
+        read -ra VALUES <<< $(aws lambda publish-layer-version \
         --layer-name $LAYER_NAME \
         --description "Bref PHP Runtime optimized for WordPress" \
         --license-info MIT \
         --zip-file fileb://./$LAYER_NAME.zip \
         --compatible-runtimes provided.al2023 \
         --compatible-architectures arm64 \
-        > /dev/null 2>&1
-
-    # Get the latest layer version and arn and store them in files
-    # (we do this because env variables in RUN are scoped to the current command only).
-    RUN --secret AWS_REGION \
-        --secret AWS_ACCESS_KEY_ID \
-        --secret AWS_SECRET_ACCESS_KEY \
-        read -ra VALUES <<< $(aws lambda list-layer-versions --layer-name $LAYER_NAME --query "LayerVersions[0].[Version, LayerVersionArn]" --output text) \
+        --query "[Version, LayerVersionArn]" \
+        --output text) \
         && echo "${VALUES[0]}" > LAYER_VERSION \
         && echo "${VALUES[1]}" > LAYER_VERSION_ARN
 
@@ -116,10 +108,11 @@ wp-php-layer:
         --layer-name $LAYER_NAME \
         --version-number $(cat LAYER_VERSION) \
         --statement-id public \
+        --principal "*" \
         --action lambda:GetLayerVersion \
-        --principal "*"
+        > /dev/null 2>&1
 
-    RUN echo -e "\n\e[36mLayer Version ARN:\e[0m $(cat LAYER_VERSION_ARN)\n"
+    RUN echo -e "\n\e[36mLayer Name:\e[0m $LAYER_NAME\n\n\e[36mLayer Version:\e[0m $(cat LAYER_VERSION)\n\n\e[36mLayer Version ARN:\e[0m $(cat LAYER_VERSION_ARN)\n"
 
 # --------------------------------------------------------------- #
 # Installs all the needed dependencies to build and install PHP.
